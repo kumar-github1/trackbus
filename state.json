@@ -1,0 +1,46 @@
+{
+  "baseline_recorded": true,
+  "buses": {
+    "0800KDIKCB": {
+      "seats": 8,
+      "time": "08:00",
+      "type": "ULTRA DELUXE"
+    },
+    "0830KDIKCBNS": {
+      "seats": 1,
+      "time": "08:30",
+      "type": "NON AC SLEEPER SEATER"
+    },
+    "0930KDIKCBAC": {
+      "seats": 3,
+      "time": "09:30",
+      "type": "AIR CONDITIONED"
+    },
+    "1900KDIKCBNS": {
+      "seats": "Full",
+      "time": "19:00",
+      "type": "NON AC SLEEPER SEATER"
+    },
+    "2000KDIKCBNS": {
+      "seats": "Full",
+      "time": "20:00",
+      "type": "NON AC SLEEPER SEATER"
+    },
+    "2030KDIKCBAC": {
+      "seats": "Full",
+      "time": "20:30",
+      "type": "AIR CONDITIONED"
+    },
+    "2045DEVKCB": {
+      "seats": "Full",
+      "time": "21:15",
+      "type": "ULTRA DELUXE"
+    },
+    "2130KDIKCBLB": {
+      "seats": 2,
+      "time": "21:30",
+      "type": "NON AC LOWER BERTH SEATER"
+    }
+  },
+  "format_error_notified": false
+}
