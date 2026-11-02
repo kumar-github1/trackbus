@@ -1,5 +1,6 @@
 name: TNSTC Seat Availability Watcher
 
+# Scheduled runs are best-effort on GitHub and may be delayed.
 on:
   schedule:
     - cron: "*/5 * * * *"
