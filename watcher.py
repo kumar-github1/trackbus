@@ -60,8 +60,17 @@ def load_state():
     if not STATE_FILE.exists():
         return None
 
-    with STATE_FILE.open(encoding="utf-8") as f:
-        return json.load(f)
+    content = STATE_FILE.read_text(encoding="utf-8").strip()
+
+    # Treat an empty or corrupt file as no state.
+    if not content:
+        return None
+
+    try:
+        return json.loads(content)
+    except json.JSONDecodeError:
+        logging.warning("State file is not valid JSON; ignoring it.")
+        return None
 
 
 def save_state(state):
@@ -292,17 +301,6 @@ def fetch_buses():
     return buses
 
 
-def format_bus(bus):
-    return (
-        f"{bus['time']} {bus['type']} "
-        f"(Trip: {bus_name(bus)}): {bus['seats']}"
-    )
-
-
-def bus_name(bus):
-    return bus.get("trip_code", "unknown")
-
-
 def send_email(subject, body):
     username = os.environ["SMTP_USER"]
     password = os.environ["SMTP_PASS"]
@@ -396,7 +394,8 @@ def main():
 
     except (URLError, HTTPError, TimeoutError, OSError) as error:
         logging.error("Network/request error: %s", error)
-        return
+        # Fail the job so blocked or unreachable runs are visible.
+        sys.exit(1)
 
     except Exception as error:
         logging.exception("Fetching/parsing failed: %s", error)
