@@ -1,0 +1,63 @@
+name: TNSTC Seat Availability Watcher
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+# Avoid overlapping runs that could overwrite state.
+concurrency:
+  group: tnstc-seat-watcher
+  cancel-in-progress: false
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Run TNSTC watcher
+        env:
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASS: ${{ secrets.SMTP_PASS }}
+          MAIL_TO: ${{ secrets.MAIL_TO }}
+
+          # Journey configuration
+          JOURNEY_DATE: ${{ vars.JOURNEY_DATE || '09/11/2026' }}
+
+          START_PLACE_ID: ${{ vars.START_PLACE_ID || '494' }}
+          END_PLACE_ID: ${{ vars.END_PLACE_ID || '1392' }}
+
+          START_PLACE_CODE: ${{ vars.START_PLACE_CODE || 'KDI' }}
+          END_PLACE_CODE: ${{ vars.END_PLACE_CODE || 'KCB' }}
+
+          START_PLACE_NAME: ${{ vars.START_PLACE_NAME || 'KARAIKUDI' }}
+          END_PLACE_NAME: ${{ vars.END_PLACE_NAME || 'CHENNAI-KILAMBAKKAM-KCBT' }}
+
+        run: python watcher.py
+
+      - name: Commit updated state
+        run: |
+          git config user.name "TNSTC Watcher"
+          git config user.email "tnstc-watcher@users.noreply.github.com"
+
+          if ! git diff --quiet -- state.json; then
+            git add state.json
+            git commit -m "Update TNSTC watcher state"
+            git push
+          else
+            echo "No state changes to commit."
+          fi

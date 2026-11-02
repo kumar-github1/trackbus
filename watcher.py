@@ -1,0 +1,465 @@
+
+import os
+import re
+import sys
+import json
+import ssl
+import logging
+import smtplib
+import http.cookiejar
+
+from pathlib import Path
+from datetime import datetime, timedelta
+from email.message import EmailMessage
+from html.parser import HTMLParser
+from urllib.request import (
+    Request, build_opener, HTTPCookieProcessor
+)
+from urllib.parse import urlencode
+from urllib.error import URLError, HTTPError
+from zoneinfo import ZoneInfo
+
+
+# Configuration
+BASE_URL = "https://www.tnstc.in/OTRSOnline/"
+SEARCH_URL = (
+    "https://www.tnstc.in/OTRSOnline/"
+    "jqreq.do?hiddenAction=SearchService"
+)
+
+STATE_FILE = Path("state.json")
+TIMEOUT = 30
+TIMEZONE = ZoneInfo("Asia/Kolkata")
+
+USER_AGENT = (
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/131.0.0.0 Safari/537.36"
+)
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s: %(message)s"
+)
+
+
+def config(name, default):
+    return os.environ.get(name, default)
+
+
+def current_dates():
+    today = datetime.now(TIMEZONE).date()
+
+    return (
+        today.strftime("%d/%m/%Y"),
+        (today + timedelta(days=30)).strftime("%d/%m/%Y")
+    )
+
+
+def load_state():
+    if not STATE_FILE.exists():
+        return None
+
+    with STATE_FILE.open(encoding="utf-8") as f:
+        return json.load(f)
+
+
+def save_state(state):
+    """Write only when changed, using an atomic replacement."""
+    content = json.dumps(
+        state, indent=2, sort_keys=True
+    ) + "\n"
+
+    if STATE_FILE.exists():
+        if STATE_FILE.read_text(encoding="utf-8") == content:
+            return
+
+    temp_file = STATE_FILE.with_suffix(".tmp")
+    temp_file.write_text(content, encoding="utf-8")
+    temp_file.replace(STATE_FILE)
+
+    logging.info("State updated.")
+
+
+# Parse individual bus blocks
+class BusParser(HTMLParser):
+
+    def __init__(self):
+        super().__init__()
+        self.anchors = []
+        self.spans = []
+
+        self.in_anchor = False
+        self.in_seat_span = False
+
+        self.anchor_text = ""
+        self.span_text = ""
+
+    def handle_starttag(self, tag, attrs):
+        attrs = dict(attrs)
+
+        if (
+            tag == "a"
+            and attrs.get("href", "").startswith("javascript:void(0)")
+        ):
+            self.in_anchor = True
+            self.anchor_text = ""
+
+        if tag == "span":
+            classes = attrs.get("class", "").split()
+
+            if "text-1" in classes:
+                self.in_seat_span = True
+                self.span_text = ""
+
+    def handle_data(self, data):
+        if self.in_anchor:
+            self.anchor_text += data
+
+        if self.in_seat_span:
+            self.span_text += data
+
+    def handle_endtag(self, tag):
+        if tag == "a" and self.in_anchor:
+            self.anchors.append(self.anchor_text.strip())
+            self.in_anchor = False
+
+        if tag == "span" and self.in_seat_span:
+            self.spans.append(self.span_text.strip())
+            self.in_seat_span = False
+
+
+def parse_buses(html):
+    # Each bus starts with a bus-list div.
+    chunks = re.split(
+        r'(?=<div\s+class=["\']bus-list["\'])',
+        html,
+        flags=re.IGNORECASE
+    )[1:]
+
+    buses = {}
+
+    for chunk in chunks:
+        time_match = re.search(
+            r'data-time=["\']([^"\']+)["\']',
+            chunk,
+            re.IGNORECASE
+        )
+
+        type_match = re.search(
+            r'data-bus-type=["\']([^"\']+)["\']',
+            chunk,
+            re.IGNORECASE
+        )
+
+        if not time_match or not type_match:
+            continue
+
+        parser = BusParser()
+        parser.feed(chunk)
+
+        if not parser.anchors:
+            continue
+
+        trip_code = parser.anchors[0]
+
+        if not trip_code:
+            continue
+
+        # No available-seat text means the bus is full.
+        seats = "Full"
+
+        for span in parser.spans:
+            match = re.search(
+                r"(\d+)\s*Seats?\s+Available",
+                span,
+                re.IGNORECASE
+            )
+
+            if match:
+                seats = int(match.group(1))
+                break
+
+        buses[trip_code] = {
+            "time": time_match.group(1),
+            "type": type_match.group(1),
+            "seats": seats
+        }
+
+    return buses
+
+
+def fetch_buses():
+    today, max_date = current_dates()
+
+    # Fresh cookie jar for every run.
+    cookie_jar = http.cookiejar.CookieJar()
+
+    opener = build_opener(
+        HTTPCookieProcessor(cookie_jar)
+    )
+
+    # GET homepage to obtain a fresh JSESSIONID.
+    get_request = Request(
+        BASE_URL,
+        headers={"User-Agent": USER_AGENT}
+    )
+
+    with opener.open(get_request, timeout=TIMEOUT) as response:
+        response.read()
+
+    logging.info("Homepage loaded; session established.")
+
+    # Configurable journey and locations.
+    start_id = config("START_PLACE_ID", "494")
+    end_id = config("END_PLACE_ID", "1392")
+
+    start_code = config("START_PLACE_CODE", "KDI")
+    end_code = config("END_PLACE_CODE", "KCB")
+
+    start_name = config("START_PLACE_NAME", "KARAIKUDI")
+    end_name = config(
+        "END_PLACE_NAME",
+        "CHENNAI-KILAMBAKKAM-KCBT"
+    )
+
+    journey_date = config("JOURNEY_DATE", "09/11/2026")
+
+    # Validate the configured journey date.
+    datetime.strptime(journey_date, "%d/%m/%Y")
+
+    form = {
+        "hiddenStartPlaceID": start_id,
+        "hiddenEndPlaceID": end_id,
+
+        "txtStartPlaceCode": start_code,
+        "txtEndPlaceCode": end_code,
+
+        "hiddenStartPlaceName": start_name,
+        "hiddenEndPlaceName": end_name,
+
+        "matchStartPlace": config(
+            "MATCH_START_PLACE", start_name
+        ),
+        "matchEndPlace": config(
+            "MATCH_END_PLACE", end_name
+        ),
+
+        "txtJourneyDate": "DD/MM/YYYY",
+        "txtReturnDate": "DD/MM/YYYY",
+
+        "hiddenCurrentDate": today,
+        "hiddenMaxNoOfPassengers": "16",
+        "hiddenMaxValidReservDate": max_date,
+
+        "hiddenOnwardJourneyDate": journey_date,
+        "hiddenReturnJourneyDate": "DD/MM/YYYY",
+
+        "selectStartPlace": start_code,
+        "selectEndPlace": end_code,
+
+        "languageType": "E",
+        "hiddenAction": "SearchService",
+
+        "checkSingleLady": "N",
+        "hiddenUserType": "G"
+    }
+
+    post_request = Request(
+        SEARCH_URL,
+        data=urlencode(form).encode("utf-8"),
+        headers={
+            "User-Agent": USER_AGENT,
+            "Origin": "https://www.tnstc.in",
+            "Referer": BASE_URL,
+            "Content-Type": "application/x-www-form-urlencoded"
+        },
+        method="POST"
+    )
+
+    with opener.open(post_request, timeout=TIMEOUT) as response:
+        html = response.read().decode(
+            "utf-8", errors="replace"
+        )
+
+    buses = parse_buses(html)
+
+    if not buses:
+        raise ValueError(
+            "No buses parsed. TNSTC page format may have changed."
+        )
+
+    return buses
+
+
+def format_bus(bus):
+    return (
+        f"{bus['time']} {bus['type']} "
+        f"(Trip: {bus_name(bus)}): {bus['seats']}"
+    )
+
+
+def bus_name(bus):
+    return bus.get("trip_code", "unknown")
+
+
+def send_email(subject, body):
+    username = os.environ["SMTP_USER"]
+    password = os.environ["SMTP_PASS"]
+    recipient = os.environ["MAIL_TO"]
+
+    message = EmailMessage()
+    message["Subject"] = subject
+    message["From"] = username
+    message["To"] = recipient
+    message.set_content(body)
+
+    # Gmail SMTP over implicit TLS.
+    with smtplib.SMTP_SSL(
+        "smtp.gmail.com",
+        465,
+        timeout=TIMEOUT,
+        context=ssl.create_default_context()
+    ) as server:
+        server.login(username, password)
+        server.send_message(message)
+
+    logging.info("Email sent: %s", subject)
+
+
+def send_baseline_email(buses):
+    lines = [
+        "TNSTC seat watcher has started.",
+        "",
+        f"Journey date: {config('JOURNEY_DATE', '09/11/2026')}",
+        f"Route: {config('START_PLACE_NAME', 'KARAIKUDI')} -> "
+        f"{config('END_PLACE_NAME', 'CHENNAI-KILAMBAKKAM-KCBT')}",
+        "",
+        "Current bus availability:",
+        ""
+    ]
+
+    for code, bus in sorted(
+        buses.items(),
+        key=lambda item: (item[1]["time"], item[0])
+    ):
+        lines.append(
+            f"{bus['time']} {bus['type']} "
+            f"(Trip: {code}): {bus['seats']}"
+        )
+
+    send_email(
+        "TNSTC Watcher Started",
+        "\n".join(lines)
+    )
+
+
+def compare_buses(previous, current):
+    changes = []
+
+    old_buses = previous["buses"]
+
+    for code in sorted(set(old_buses) | set(current)):
+        old = old_buses.get(code)
+        new = current.get(code)
+
+        bus = new or old
+        description = f"{bus['time']} {bus['type']}"
+
+        if old is None:
+            changes.append(
+                f"{description}: appeared ({new['seats']} seats)"
+                f" [Trip: {code}]"
+            )
+
+        elif new is None:
+            changes.append(
+                f"{description}: disappeared "
+                f"(was {old['seats']} seats)"
+                f" [Trip: {code}]"
+            )
+
+        elif old["seats"] != new["seats"]:
+            changes.append(
+                f"{description}: {old['seats']} -> {new['seats']}"
+                f" [Trip: {code}]"
+            )
+
+    return changes
+
+
+def main():
+    logging.info("Starting TNSTC watcher.")
+
+    try:
+        buses = fetch_buses()
+
+    except (URLError, HTTPError, TimeoutError, OSError) as error:
+        logging.error("Network/request error: %s", error)
+        return
+
+    except Exception as error:
+        logging.exception("Fetching/parsing failed: %s", error)
+
+        state = load_state() or {
+            "buses": {},
+            "baseline_recorded": False,
+            "format_error_notified": False
+        }
+
+        if not state.get("format_error_notified", False):
+            send_email(
+                "TNSTC Watcher: Parsing Error",
+                "The TNSTC page returned zero parseable buses.\n\n"
+                "The page format may have changed, or the response "
+                "may be unexpected.\n\n"
+                "The previous bus snapshot has NOT been replaced.\n"
+                "Please inspect the TNSTC website and watcher logs."
+            )
+
+            state["format_error_notified"] = True
+            save_state(state)
+
+        return
+
+    previous = load_state()
+
+    # First successful parse establishes the baseline.
+    if previous is None or not previous.get("baseline_recorded", False):
+        send_baseline_email(buses)
+
+        save_state({
+            "buses": buses,
+            "baseline_recorded": True,
+            "format_error_notified": False
+        })
+
+        logging.info("Baseline recorded.")
+        return
+
+    changes = compare_buses(previous, buses)
+
+    if changes:
+        message = [
+            "TNSTC seat availability has changed.",
+            "",
+            f"Journey date: {config('JOURNEY_DATE', '09/11/2026')}",
+            ""
+        ] + changes
+
+        send_email(
+            "TNSTC Seat Availability Changed",
+            "\n".join(message)
+        )
+    else:
+        logging.info("No availability changes.")
+
+    save_state({
+        "buses": buses,
+        "baseline_recorded": True,
+        "format_error_notified": False
+    })
+
+
+if __name__ == "__main__":
+    main()
