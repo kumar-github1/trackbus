@@ -39,7 +39,7 @@
           "type": "ULTRA DELUXE"
         },
         "2130KDIKCBLB": {
-          "seats": 2,
+          "seats": "Full",
           "time": "21:30",
           "type": "NON AC LOWER BERTH SEATER"
         }
@@ -85,7 +85,7 @@
           "type": "ULTRA DELUXE"
         },
         "2130KDIKCBLB": {
-          "seats": 2,
+          "seats": 4,
           "time": "21:30",
           "type": "NON AC LOWER BERTH SEATER"
         }
