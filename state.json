@@ -63,7 +63,7 @@
           "type": "NON AC LOWER BERTH SEATER"
         }
       },
-      "format_error_notified": true
+      "format_error_notified": false
     },
     "10/11/2026": {
       "baseline_recorded": true,
@@ -123,7 +123,7 @@
           "type": "NON AC LOWER BERTH SEATER"
         }
       },
-      "format_error_notified": true
+      "format_error_notified": false
     }
   }
 }
