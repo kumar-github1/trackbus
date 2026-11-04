@@ -4,42 +4,62 @@
       "baseline_recorded": true,
       "buses": {
         "0800KDIKCB": {
-          "seats": 13,
+          "seat_numbers": [
+            "5W",
+            "6A",
+            "9W",
+            "19A",
+            "20W",
+            "23A",
+            "30A",
+            "31A",
+            "34A",
+            "38A",
+            "39A"
+          ],
+          "seats": 11,
           "time": "08:00",
           "type": "ULTRA DELUXE"
         },
         "0830KDIKCBNS": {
-          "seats": 1,
+          "seat_numbers": [],
+          "seats": "Full",
           "time": "08:30",
           "type": "NON AC SLEEPER SEATER"
         },
         "0930KDIKCBAC": {
+          "seat_numbers": [],
           "seats": "Full",
           "time": "09:30",
           "type": "AIR CONDITIONED"
         },
         "1900KDIKCBNS": {
+          "seat_numbers": [],
           "seats": "Full",
           "time": "19:00",
           "type": "NON AC SLEEPER SEATER"
         },
         "2000KDIKCBNS": {
+          "seat_numbers": [],
           "seats": "Full",
           "time": "20:00",
           "type": "NON AC SLEEPER SEATER"
         },
         "2030KDIKCBAC": {
+          "seat_numbers": [],
           "seats": "Full",
           "time": "20:30",
           "type": "AIR CONDITIONED"
         },
         "2045DEVKCB": {
+          "seat_numbers": [],
           "seats": "Full",
           "time": "21:15",
           "type": "ULTRA DELUXE"
         },
         "2130KDIKCBLB": {
-          "seats": 2,
+          "seat_numbers": [],
+          "seats": "Full",
           "time": "21:30",
           "type": "NON AC LOWER BERTH SEATER"
         }
@@ -50,42 +70,56 @@
       "baseline_recorded": true,
       "buses": {
         "0800KDIKCB": {
-          "seats": 7,
+          "seat_numbers": [
+            "2A",
+            "31A",
+            "38A",
+            "39A",
+            "40W"
+          ],
+          "seats": 5,
           "time": "08:00",
           "type": "ULTRA DELUXE"
         },
         "0830KDIKCBNS": {
-          "seats": 2,
+          "seat_numbers": [],
+          "seats": "Full",
           "time": "08:30",
           "type": "NON AC SLEEPER SEATER"
         },
         "0930KDIKCBAC": {
+          "seat_numbers": [],
           "seats": "Full",
           "time": "09:30",
           "type": "AIR CONDITIONED"
         },
         "1900KDIKCBNS": {
-          "seats": 1,
+          "seat_numbers": [],
+          "seats": "Full",
           "time": "19:00",
           "type": "NON AC SLEEPER SEATER"
         },
         "2000KDIKCBNS": {
+          "seat_numbers": [],
           "seats": "Full",
           "time": "20:00",
           "type": "NON AC SLEEPER SEATER"
         },
         "2030KDIKCBAC": {
+          "seat_numbers": [],
           "seats": "Full",
           "time": "20:30",
           "type": "AIR CONDITIONED"
         },
         "2045DEVKCB": {
-          "seats": 1,
+          "seat_numbers": [],
+          "seats": "Full",
           "time": "21:15",
           "type": "ULTRA DELUXE"
         },
         "2130KDIKCBLB": {
-          "seats": 2,
+          "seat_numbers": [],
+          "seats": "Full",
           "time": "21:30",
           "type": "NON AC LOWER BERTH SEATER"
         }
