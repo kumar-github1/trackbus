@@ -39,7 +39,7 @@
           "type": "ULTRA DELUXE"
         },
         "2130KDIKCBLB": {
-          "seats": 1,
+          "seats": 2,
           "time": "21:30",
           "type": "NON AC LOWER BERTH SEATER"
         }
@@ -50,7 +50,7 @@
       "baseline_recorded": true,
       "buses": {
         "0800KDIKCB": {
-          "seats": 9,
+          "seats": 7,
           "time": "08:00",
           "type": "ULTRA DELUXE"
         },
@@ -85,7 +85,7 @@
           "type": "ULTRA DELUXE"
         },
         "2130KDIKCBLB": {
-          "seats": 4,
+          "seats": 3,
           "time": "21:30",
           "type": "NON AC LOWER BERTH SEATER"
         }
