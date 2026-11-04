@@ -36,7 +36,9 @@ jobs:
           SMTP_PASS: ${{ secrets.SMTP_PASS }}
           MAIL_TO: ${{ secrets.MAIL_TO }}
 
-          # Journey configuration
+          # Journey configuration (comma-separated DD/MM/YYYY)
+          JOURNEY_DATES: ${{ vars.JOURNEY_DATES || '09/11/2026,10/11/2026' }}
+          # Date of the old single-date state, used to migrate it.
           JOURNEY_DATE: ${{ vars.JOURNEY_DATE || '09/11/2026' }}
 
           START_PLACE_ID: ${{ vars.START_PLACE_ID || '494' }}

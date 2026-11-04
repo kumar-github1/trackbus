@@ -47,6 +47,25 @@ def config(name, default):
     return os.environ.get(name, default)
 
 
+def journey_dates():
+    """Comma-separated DD/MM/YYYY dates to watch."""
+    raw = config("JOURNEY_DATES", "09/11/2026,10/11/2026")
+    dates = [d.strip() for d in raw.split(",") if d.strip()]
+
+    # Validate the configured journey dates.
+    for date in dates:
+        datetime.strptime(date, "%d/%m/%Y")
+
+    return dates
+
+
+def route_description():
+    return (
+        f"{config('START_PLACE_NAME', 'KARAIKUDI')} -> "
+        f"{config('END_PLACE_NAME', 'CHENNAI-KILAMBAKKAM-KCBT')}"
+    )
+
+
 def current_dates():
     today = datetime.now(TIMEZONE).date()
 
@@ -198,7 +217,7 @@ def parse_buses(html):
     return buses
 
 
-def fetch_buses():
+def fetch_buses(journey_date):
     today, max_date = current_dates()
 
     # Fresh cookie jar for every run.
@@ -231,11 +250,6 @@ def fetch_buses():
         "END_PLACE_NAME",
         "CHENNAI-KILAMBAKKAM-KCBT"
     )
-
-    journey_date = config("JOURNEY_DATE", "09/11/2026")
-
-    # Validate the configured journey date.
-    datetime.strptime(journey_date, "%d/%m/%Y")
 
     form = {
         "hiddenStartPlaceID": start_id,
@@ -325,17 +339,8 @@ def send_email(subject, body):
     logging.info("Email sent: %s", subject)
 
 
-def send_baseline_email(buses):
-    lines = [
-        "TNSTC seat watcher has started.",
-        "",
-        f"Journey date: {config('JOURNEY_DATE', '09/11/2026')}",
-        f"Route: {config('START_PLACE_NAME', 'KARAIKUDI')} -> "
-        f"{config('END_PLACE_NAME', 'CHENNAI-KILAMBAKKAM-KCBT')}",
-        "",
-        "Current bus availability:",
-        ""
-    ]
+def format_buses(buses):
+    lines = []
 
     for code, bus in sorted(
         buses.items(),
@@ -346,10 +351,7 @@ def send_baseline_email(buses):
             f"(Trip: {code}): {bus['seats']}"
         )
 
-    send_email(
-        "TNSTC Watcher Started",
-        "\n".join(lines)
-    )
+    return lines
 
 
 def compare_buses(previous, current):
@@ -386,78 +388,121 @@ def compare_buses(previous, current):
     return changes
 
 
+def load_journeys():
+    """Per-date state; migrates the old single-date format."""
+    state = load_state() or {}
+
+    if "journeys" in state:
+        return state["journeys"]
+
+    # Old format held one date's snapshot at the top level.
+    if state.get("baseline_recorded"):
+        return {config("JOURNEY_DATE", "09/11/2026"): state}
+
+    return {}
+
+
 def main():
     logging.info("Starting TNSTC watcher.")
 
-    try:
-        buses = fetch_buses()
+    journeys = load_journeys()
 
-    except (URLError, HTTPError, TimeoutError, OSError) as error:
-        logging.error("Network/request error: %s", error)
-        # Fail the job so blocked or unreachable runs are visible.
-        sys.exit(1)
+    baseline_sections = []
+    change_sections = []
+    error_dates = []
+    network_failed = False
 
-    except Exception as error:
-        logging.exception("Fetching/parsing failed: %s", error)
+    for journey_date in journey_dates():
+        entry = journeys.get(journey_date, {})
 
-        state = load_state() or {
-            "buses": {},
-            "baseline_recorded": False,
-            "format_error_notified": False
-        }
+        try:
+            buses = fetch_buses(journey_date)
 
-        if not state.get("format_error_notified", False):
-            send_email(
-                "TNSTC Watcher: Parsing Error",
-                "The TNSTC page returned zero parseable buses.\n\n"
-                "The page format may have changed, or the response "
-                "may be unexpected.\n\n"
-                "The previous bus snapshot has NOT been replaced.\n"
-                "Please inspect the TNSTC website and watcher logs."
+        except (URLError, HTTPError, TimeoutError, OSError) as error:
+            logging.error(
+                "Network/request error for %s: %s", journey_date, error
+            )
+            network_failed = True
+            continue
+
+        except Exception as error:
+            logging.exception(
+                "Fetching/parsing failed for %s: %s", journey_date, error
             )
 
-            state["format_error_notified"] = True
-            save_state(state)
+            # Notify once; keep the previous snapshot.
+            if not entry.get("format_error_notified", False):
+                error_dates.append(journey_date)
+                entry["format_error_notified"] = True
+                journeys[journey_date] = entry
 
-        return
+            continue
 
-    previous = load_state()
+        # First successful parse establishes the baseline.
+        if not entry.get("baseline_recorded", False):
+            baseline_sections += (
+                [f"Journey date: {journey_date}", ""]
+                + format_buses(buses) + [""]
+            )
+            logging.info("Baseline recorded for %s.", journey_date)
 
-    # First successful parse establishes the baseline.
-    if previous is None or not previous.get("baseline_recorded", False):
-        send_baseline_email(buses)
+        else:
+            changes = compare_buses(entry, buses)
 
-        save_state({
+            if changes:
+                change_sections += (
+                    [f"Journey date: {journey_date}", ""]
+                    + changes + [""]
+                )
+            else:
+                logging.info("No availability changes for %s.", journey_date)
+
+        journeys[journey_date] = {
             "buses": buses,
             "baseline_recorded": True,
             "format_error_notified": False
-        })
+        }
 
-        logging.info("Baseline recorded.")
-        return
+    if baseline_sections:
+        send_email(
+            "TNSTC Watcher Started",
+            "\n".join([
+                "TNSTC seat watcher has started.",
+                "",
+                f"Route: {route_description()}",
+                "",
+                "Current bus availability:",
+                ""
+            ] + baseline_sections)
+        )
 
-    changes = compare_buses(previous, buses)
-
-    if changes:
-        message = [
-            "TNSTC seat availability has changed.",
-            "",
-            f"Journey date: {config('JOURNEY_DATE', '09/11/2026')}",
-            ""
-        ] + changes
-
+    if change_sections:
         send_email(
             "TNSTC Seat Availability Changed",
-            "\n".join(message)
+            "\n".join([
+                "TNSTC seat availability has changed.",
+                "",
+                f"Route: {route_description()}",
+                ""
+            ] + change_sections)
         )
-    else:
-        logging.info("No availability changes.")
 
-    save_state({
-        "buses": buses,
-        "baseline_recorded": True,
-        "format_error_notified": False
-    })
+    if error_dates:
+        send_email(
+            "TNSTC Watcher: Parsing Error",
+            "The TNSTC page returned zero parseable buses for: "
+            + ", ".join(error_dates) + "\n\n"
+            "The page format may have changed, or the response "
+            "may be unexpected.\n\n"
+            "The previous bus snapshot has NOT been replaced.\n"
+            "Please inspect the TNSTC website and watcher logs."
+        )
+
+    save_state({"journeys": journeys})
+
+    if network_failed:
+        # Fail the job so blocked or unreachable runs are visible.
+        sys.exit(1)
 
 
 if __name__ == "__main__":
