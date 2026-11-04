@@ -23,6 +23,9 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
+          # Latest main, not the trigger-time commit; a queued run
+          # would otherwise read stale state and resend alerts.
+          ref: main
           persist-credentials: true
 
       - name: Setup Python
@@ -60,6 +63,8 @@ jobs:
           if ! git diff --quiet -- state.json; then
             git add state.json
             git commit -m "Update TNSTC watcher state"
+            # Rebase onto any commit pushed since checkout.
+            git pull --rebase
             git push
           else
             echo "No state changes to commit."

@@ -354,32 +354,30 @@ def format_buses(buses):
     return lines
 
 
+def seat_count(seats):
+    return 0 if seats == "Full" else seats
+
+
 def compare_buses(previous, current):
+    """Report only seats freeing up; drops and removals are ignored."""
     changes = []
 
     old_buses = previous["buses"]
 
-    for code in sorted(set(old_buses) | set(current)):
+    for code in sorted(current):
         old = old_buses.get(code)
-        new = current.get(code)
+        new = current[code]
 
-        bus = new or old
-        description = f"{bus['time']} {bus['type']}"
+        description = f"{new['time']} {new['type']}"
 
         if old is None:
-            changes.append(
-                f"{description}: appeared ({new['seats']} seats)"
-                f" [Trip: {code}]"
-            )
+            if seat_count(new["seats"]) > 0:
+                changes.append(
+                    f"{description}: appeared ({new['seats']} seats)"
+                    f" [Trip: {code}]"
+                )
 
-        elif new is None:
-            changes.append(
-                f"{description}: disappeared "
-                f"(was {old['seats']} seats)"
-                f" [Trip: {code}]"
-            )
-
-        elif old["seats"] != new["seats"]:
+        elif seat_count(new["seats"]) > seat_count(old["seats"]):
             changes.append(
                 f"{description}: {old['seats']} -> {new['seats']}"
                 f" [Trip: {code}]"
