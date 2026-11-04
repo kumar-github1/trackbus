@@ -1,10 +1,8 @@
 name: TNSTC Seat Availability Watcher
 
-# Scheduled runs are best-effort on GitHub and may be delayed.
+# Triggered every 5 minutes by a Zoho Catalyst cron (webhook to the
+# workflow_dispatch API); GitHub's own schedule was too unreliable.
 on:
-  schedule:
-    - cron: "*/5 * * * *"
-
   workflow_dispatch:
 
 permissions:
