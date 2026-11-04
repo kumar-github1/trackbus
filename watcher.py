@@ -31,6 +31,20 @@ STATE_FILE = Path("state.json")
 TIMEOUT = 30
 TIMEZONE = ZoneInfo("Asia/Kolkata")
 
+# Seat cells in the layout: (class, inner HTML).
+SEAT_CELL = re.compile(
+    r'<td\b[^>]*\bclass="([^"]*)"[^>]*>(.*?)</td>',
+    re.IGNORECASE | re.DOTALL
+)
+
+# Differently-abled and ladies quota seats.
+RESERVED_SEAT_CLASS = re.compile(r"diffab|ladies", re.IGNORECASE)
+
+# Quota berths on sleeper buses; the layout does not mark them,
+# they are only flagged at the end of booking.
+SLEEPER_BUS_TYPE = re.compile(r"SLEEPER|BERTH", re.IGNORECASE)
+RESERVED_BERTHS = {"1LB", "2LB"}
+
 USER_AGENT = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
     "AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -208,13 +222,73 @@ def parse_buses(html):
                 seats = int(match.group(1))
                 break
 
+        # Arguments of the "Select Seats" button; full buses have none.
+        layout_match = re.search(
+            r"showLayOut\('([^']+)'\s*,\s*'(\d+)'",
+            chunk
+        )
+
         buses[trip_code] = {
             "time": time_match.group(1),
             "type": type_match.group(1),
-            "seats": seats
+            "seats": seats,
+            "layout": layout_match.groups() if layout_match else None
         }
 
     return buses
+
+
+def parse_general_seats(html):
+    """Bookable seat numbers, excluding specially reserved seats."""
+    seats = []
+
+    for classes, inner in SEAT_CELL.findall(html):
+        # Only open seats carry a selection checkbox.
+        if 'type="checkbox"' not in inner:
+            continue
+
+        if RESERVED_SEAT_CLASS.search(classes):
+            continue
+
+        label = re.sub(r"<[^>]+>|&nbsp;|\s", "", inner)
+        seats.append(label)
+
+    return sorted(seats, key=lambda s: (
+        int(re.match(r"\d*", s).group() or 0), s
+    ))
+
+
+def fetch_general_seats(opener, layout):
+    service_info, serial_no = layout
+
+    request = Request(
+        BASE_URL
+        + "advanceNewBooking.do?hiddenAction=SubmitToGetOnwardSeatLayout&"
+        + urlencode({
+            "radOnwardServiceID": service_info,
+            "slNo": serial_no
+        }),
+        data=b"",
+        headers={
+            "User-Agent": USER_AGENT,
+            "Origin": "https://www.tnstc.in",
+            "Referer": SEARCH_URL,
+            "X-Requested-With": "XMLHttpRequest"
+        },
+        method="POST"
+    )
+
+    with opener.open(request, timeout=TIMEOUT) as response:
+        html = response.read().decode(
+            "utf-8", errors="replace"
+        )
+
+    if "chkSelectedList" not in html and "seatBooked" not in html:
+        raise ValueError(
+            "Seat layout not recognised. TNSTC page format may have changed."
+        )
+
+    return parse_general_seats(html)
 
 
 def fetch_buses(journey_date):
@@ -312,6 +386,17 @@ def fetch_buses(journey_date):
             "No buses parsed. TNSTC page format may have changed."
         )
 
+    # The search count includes reserved seats; count general ones.
+    for bus in buses.values():
+        layout = bus.pop("layout")
+        general = fetch_general_seats(opener, layout) if layout else []
+
+        if SLEEPER_BUS_TYPE.search(bus["type"]):
+            general = [s for s in general if s not in RESERVED_BERTHS]
+
+        bus["seats"] = len(general) or "Full"
+        bus["seat_numbers"] = general
+
     return buses
 
 
@@ -346,9 +431,12 @@ def format_buses(buses):
         buses.items(),
         key=lambda item: (item[1]["time"], item[0])
     ):
+        seat_list = ", ".join(bus.get("seat_numbers", []))
+
         lines.append(
             f"{bus['time']} {bus['type']} "
             f"(Trip: {code}): {bus['seats']}"
+            + (f" ({seat_list})" if seat_list else "")
         )
 
     return lines
@@ -359,7 +447,7 @@ def seat_count(seats):
 
 
 def compare_buses(previous, current):
-    """Report only seats freeing up; drops and removals are ignored."""
+    """Report only general seats freeing up; drops are ignored."""
     changes = []
 
     old_buses = previous["buses"]
@@ -370,16 +458,33 @@ def compare_buses(previous, current):
 
         description = f"{new['time']} {new['type']}"
 
+        seat_list = ", ".join(new.get("seat_numbers", []))
+
         if old is None:
             if seat_count(new["seats"]) > 0:
                 changes.append(
-                    f"{description}: appeared ({new['seats']} seats)"
-                    f" [Trip: {code}]"
+                    f"{description}: appeared ({new['seats']} seats:"
+                    f" {seat_list}) [Trip: {code}]"
                 )
+            continue
 
-        elif seat_count(new["seats"]) > seat_count(old["seats"]):
+        # Snapshots from before seat-level tracking have no numbers.
+        if "seat_numbers" in old:
+            freed = [
+                seat for seat in new.get("seat_numbers", [])
+                if seat not in old["seat_numbers"]
+            ]
+        else:
+            freed = (
+                new.get("seat_numbers", [])
+                if seat_count(new["seats"]) > seat_count(old["seats"])
+                else []
+            )
+
+        if freed:
             changes.append(
                 f"{description}: {old['seats']} -> {new['seats']}"
+                f" (freed: {', '.join(freed)}; open: {seat_list})"
                 f" [Trip: {code}]"
             )
 
