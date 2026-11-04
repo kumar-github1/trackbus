@@ -5,7 +5,6 @@
       "buses": {
         "0800KDIKCB": {
           "seat_numbers": [
-            "5W",
             "6A",
             "9W",
             "19A",
@@ -16,7 +15,7 @@
             "38A",
             "39A"
           ],
-          "seats": 10,
+          "seats": 9,
           "time": "08:00",
           "type": "ULTRA DELUXE"
         },
