@@ -38,7 +38,7 @@ jobs:
           MAIL_TO: ${{ secrets.MAIL_TO }}
 
           # Journey configuration (comma-separated DD/MM/YYYY)
-          JOURNEY_DATES: ${{ vars.JOURNEY_DATES || '09/11/2026,10/11/2026' }}
+          JOURNEY_DATES: ${{ vars.JOURNEY_DATES || '10/11/2026' }}
           # Date of the old single-date state, used to migrate it.
           JOURNEY_DATE: ${{ vars.JOURNEY_DATE || '09/11/2026' }}
 
