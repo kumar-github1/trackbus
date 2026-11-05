@@ -109,8 +109,10 @@
           "type": "AIR CONDITIONED"
         },
         "2045DEVKCB": {
-          "seat_numbers": [],
-          "seats": "Full",
+          "seat_numbers": [
+            "33W"
+          ],
+          "seats": 1,
           "time": "21:15",
           "type": "ULTRA DELUXE"
         },
