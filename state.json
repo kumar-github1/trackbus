@@ -31,10 +31,8 @@
           "type": "AIR CONDITIONED"
         },
         "1900KDIKCBNS": {
-          "seat_numbers": [
-            "25W"
-          ],
-          "seats": 1,
+          "seat_numbers": [],
+          "seats": "Full",
           "time": "19:00",
           "type": "NON AC SLEEPER SEATER"
         },
