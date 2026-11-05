@@ -69,12 +69,13 @@
         "0800KDIKCB": {
           "seat_numbers": [
             "2A",
+            "17W",
             "31A",
             "38A",
             "39A",
             "40W"
           ],
-          "seats": 5,
+          "seats": 6,
           "time": "08:00",
           "type": "ULTRA DELUXE"
         },
