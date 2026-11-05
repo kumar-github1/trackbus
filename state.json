@@ -39,8 +39,10 @@
           "type": "NON AC SLEEPER SEATER"
         },
         "2000KDIKCBNS": {
-          "seat_numbers": [],
-          "seats": "Full",
+          "seat_numbers": [
+            "6W"
+          ],
+          "seats": 1,
           "time": "20:00",
           "type": "NON AC SLEEPER SEATER"
         },
